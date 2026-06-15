@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VerseBlaster ✦</title>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  overflow: hidden;
+}
+canvas {
+  display: block;
+  cursor: pointer;
+  border-radius: 8px;
+  box-shadow:
+    0 20px 60px rgba(80,60,20,0.18),
+    0 4px 16px rgba(0,0,0,0.10),
+    0 0 0 1px rgba(200,168,80,0.22);
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+
+// ── Canvas / HiDPI ────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const dpr = Math.min(window.devicePixelRatio || 1, 3);
+const W = Math.min(window.innerWidth  - 24, 740);
+const H = Math.min(window.innerHeight - 24, 570);
+canvas.style.width  = W + 'px';
+canvas.style.height = H + 'px';
+canvas.width  = W * dpr;
+canvas.height = H * dpr;
+ctx.scale(dpr, dpr);
+
+// ── Layout ────────────────────────────────────────────────────────────────────
+const SHELF_Y   = 108;
+const PLAY_TOP  = SHELF_Y + 20;
+const PLAY_BOT  = H - 78;
+const SHOOTER_Y = H - 96;
+const LIGHTS_Y  = SHELF_Y + 17;
+
+// ── Palette ───────────────────────────────────────────────────────────────────
+const C = {
+  bg:    '#fefcf8',
+  dark:  '#2a1a06',
+  gold:  '#b89030',
+  rose:  '#b86060',
+  ink:   '#1e1008',
+};
+
+const FLOWERS = ['🌸','🌺','🌼','❤️','💛','🌹','💗','🌷','🍂','✨'];
+
+// ── Content pool — with full punctuation so TTS reads naturally ───────────────
+const CONTENT = [
+  { author: 'Emily Dickinson', title: 'That Love Is All There Is',
+    text: 'That Love is all there is, is all we know of Love.' },
+  { author: 'Mary Oliver', title: 'The Summer Day',
+    text: 'Tell me, what is it you plan to do with your one wild and precious life?' },
+  { author: 'Rumi', title: 'The Field',
+    text: 'Out beyond ideas of wrongdoing and rightdoing, there is a field. I will meet you there.' },
+  { author: 'Walt Whitman', title: 'Song of Myself',
+    text: 'I am large, I contain multitudes. I sound my barbaric yawp over the roofs of the world.' },
+  { author: 'Maya Angelou', title: 'Still I Rise',
+    text: 'Still I rise, up from a past rooted in pain. I rise into a daybreak that is wondrously clear. I rise.' },
+  { author: 'Sylvia Plath', title: 'The Bell Jar',
+    text: 'I took a deep breath, and listened to the old brag of my heart: I am, I am, I am.' },
+  { author: 'Pablo Neruda', title: 'Every Day You Play',
+    text: 'I want to do with you what spring does with the cherry trees.' },
+  { author: 'Lord Byron', title: 'She Walks in Beauty',
+    text: 'She walks in beauty, like the night of cloudless climes and starry skies. And all that\'s best of dark and bright meet in her aspect and her eyes.' },
+  { author: 'Agha Shahid Ali', title: 'Postcard from Kashmir',
+    text: 'Kashmir shrinks into my mailbox, my home a neat four by six inches. I always loved neatness. Now I hold the half-inch Himalayas in my hand.' },
+  { author: 'Rabindranath Tagore', title: 'Gitanjali',
+    text: 'Let your life lightly dance on the edges of time, like dew on the tip of a leaf.' },
+  { author: 'Hafiz', title: 'The Sun Never Says',
+    text: 'Even after all this time, the sun never says to the earth, "You owe me." Look what happens with a love like that — it lights the whole sky.' },
+  { author: 'Virginia Woolf', title: 'A Room of One\'s Own',
+    text: 'You cannot find peace by avoiding life.' },
+  { author: 'Rupi Kaur', title: 'Milk and Honey',
+    text: 'You are your own soulmate. The universe made you an entire world, in one body.' },
+  { author: 'Langston Hughes', title: 'Dreams',
+    text: 'Hold fast to dreams, for if dreams die, life is a broken-winged bird that cannot fly.' },
+  { author: 'J.R.R. Tolkien', title: 'The Fellowship of the Ring',
+    text: 'Not all those who wander are lost. The old that is strong does not wither, deep roots are not reached by the frost.' },
+];
+
+// ── roundRect polyfill ────────────────────────────────────────────────────────
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+    if (Array.isArray(r)) r = r[0];
+    r = Math.min(Number(r) || 0, w / 2, h / 2);
+    this.beginPath();
+    this.moveTo(x + r, y);
+    this.lineTo(x + w - r, y); this.arcTo(x+w, y,   x+w, y+r,   r);
+    this.lineTo(x+w, y+h-r);  this.arcTo(x+w, y+h, x+w-r, y+h, r);
+    this.lineTo(x+r, y+h);    this.arcTo(x,   y+h, x,   y+h-r, r);
+    this.lineTo(x, y+r);      this.arcTo(x,   y,   x+r, y,     r);
+    this.closePath();
+  };
+}
+
+// ── Books — pastel hardcovers with gold engraving ─────────────────────────────
+function makeBooks() {
+  // Muted, paper-like pastels — Penguin Clothbound / Folio Society palette
+  const cols = [
+    '#e8d0c4','#dfc8ba',   // blush rose
+    '#c8d8c0','#b8ceb0',   // sage green
+    '#c4d0e4','#b4c4dc',   // powder blue
+    '#d4c4e0','#c8b8d8',   // lavender
+    '#f0e6c4','#e8dab0',   // warm cream / butter
+    '#e0c8c4','#d4bcb8',   // dusty rose
+    '#b8d4ca','#a8c8bc',   // mint
+    '#f0d8bc','#e4ccaa',   // peach
+    '#d4c0d0','#c8b4c4',   // mauve
+    '#e4d8a0','#d8cc8c',   // pale gold / straw
+    '#a8c8cc','#98bcc0',   // dusty teal
+    '#dce8e0','#ccdcd4',   // celadon
+    '#e8c4a0','#dab890',   // apricot
+    '#c8d4e8','#b8c8e0',   // periwinkle
+  ];
+  const list = [];
+  let x = 0;
+  while (x < W) {
+    const isThin = Math.random() > 0.48;
+    const bw = isThin ? (8 + Math.random() * 13) : (16 + Math.random() * 24);
+    const bh = 50 + Math.random() * 52;
+    list.push({
+      x, w: bw, h: bh,
+      col: cols[Math.floor(Math.random() * cols.length)],
+      tilt: Math.random() > 0.87 ? (Math.random() - 0.5) * 0.08 : 0,
+      // Gold engraving bands — 1–2 horizontal lines on spine
+      bands: Math.random() > 0.4
+        ? [0.22 + Math.random() * 0.12, 0.75 + Math.random() * 0.1]
+        : [0.48 + Math.random() * 0.1],
+    });
+    x += bw + (Math.random() > 0.9 ? 2 : 1);
+  }
+  return list;
+}
+const BOOKS = makeBooks();
+
+// ── Fairy lights ──────────────────────────────────────────────────────────────
+const LIGHTS = [];
+for (let x = 28; x < W - 18; x += 30 + Math.random() * 18) {
+  LIGHTS.push({ x, phase: Math.random() * Math.PI * 2 });
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let STATE = 'TITLE';
+let score = 0;
+let lives = 3;
+let poem  = null;
+let queue = [...CONTENT].sort(() => Math.random() - 0.5);
+let qIdx  = 0;
+
+let words     = [];
+let bullets   = [];
+let particles = [];
+
+let shooterX = W / 2;
+let targetX  = W / 2;
+
+let toSpawn       = [];
+let spawnTimer    = 0;
+let spawnInterval = 2600;
+
+let pendingClear = false;
+let clearTimer   = 0;
+
+let speechDone = false;
+let readAlpha  = 0;
+let blinkT     = 0;
+let gameTime   = 0;
+let lastTS     = 0;
+
+// ── Speech ────────────────────────────────────────────────────────────────────
+(function primeVoices() {
+  if (!window.speechSynthesis) return;
+  speechSynthesis.getVoices();
+  speechSynthesis.onvoiceschanged = () => {};
+})();
+
+function speak(text, onDone) {
+  if (!window.speechSynthesis) { setTimeout(onDone, 300); return; }
+  speechSynthesis.cancel();
+  setJazzVolume(0.055, 0.7);   // duck music while poem is read aloud
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate   = 0.78;
+  u.pitch  = 1.04;
+  u.volume = 1;
+  const vs = speechSynthesis.getVoices();
+  u.voice =
+    vs.find(v => /jenny.*natural|aria.*natural/i.test(v.name)) ||
+    vs.find(v => v.name === 'Google US English') ||
+    vs.find(v => /^samantha$/i.test(v.name)) ||
+    vs.find(v => /^alex$/i.test(v.name)) ||
+    vs.find(v => /^karen$/i.test(v.name)) ||
+    vs.find(v => /^victoria$/i.test(v.name)) ||
+    vs.find(v => v.lang === 'en-US' && !v.localService) ||
+    vs.find(v => v.lang === 'en-US') ||
+    vs.find(v => v.lang.startsWith('en') && !v.localService) ||
+    vs.find(v => v.lang.startsWith('en')) || null;
+  const restore = () => { setJazzVolume(0.18, 1.8); onDone(); };
+  u.onend   = restore;
+  u.onerror = restore;
+  speechSynthesis.speak(u);
+}
+
+// ── Ambient Jazz ──────────────────────────────────────────────────────────────
+let _jazzAC   = null;
+let _jazzGain = null;
+let _jazzStarted = false;
+
+function setJazzVolume(v, rampSecs) {
+  if (!_jazzGain || !_jazzAC) return;
+  _jazzGain.gain.cancelScheduledValues(_jazzAC.currentTime);
+  _jazzGain.gain.setValueAtTime(_jazzGain.gain.value, _jazzAC.currentTime);
+  _jazzGain.gain.linearRampToValueAtTime(v, _jazzAC.currentTime + rampSecs);
+}
+
+function startAmbientJazz() {
+  if (_jazzStarted) return;
+  _jazzStarted = true;
+  try {
+    const AC = new (window.AudioContext || window.webkitAudioContext)();
+    _jazzAC = AC;
+
+    // Master gain — fade in over 5 s
+    const master = AC.createGain();
+    master.gain.setValueAtTime(0, AC.currentTime);
+    master.gain.linearRampToValueAtTime(0.18, AC.currentTime + 5);
+    master.connect(AC.destination);
+    _jazzGain = master;
+
+    // Warm reverb
+    const rev = AC.createConvolver();
+    const rLen = AC.sampleRate * 3.2;
+    const rBuf = AC.createBuffer(2, rLen, AC.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const d = rBuf.getChannelData(c);
+      for (let i = 0; i < rLen; i++)
+        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / rLen, 1.9);
+    }
+    rev.buffer = rBuf;
+    const revSend = AC.createGain();
+    revSend.gain.value = 0.38;
+    rev.connect(revSend);
+    revSend.connect(master);
+
+    // Play a sustained tone
+    function tone(freq, start, dur, amp, type = 'sine') {
+      const osc = AC.createOscillator();
+      const env = AC.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      const atk = Math.min(0.10, dur * 0.12);
+      env.gain.setValueAtTime(0, start);
+      env.gain.linearRampToValueAtTime(amp, start + atk);
+      env.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+      osc.connect(env); env.connect(master);
+      // Reverb send
+      const rs = AC.createGain(); rs.gain.value = 0.42;
+      env.connect(rs); rs.connect(rev);
+      osc.start(start); osc.stop(start + dur + 0.15);
+    }
+
+    // Brushed hi-hat (filtered noise burst)
+    function hihat(start, dur, amp) {
+      const nLen = Math.floor(AC.sampleRate * 0.13);
+      const nBuf = AC.createBuffer(1, nLen, AC.sampleRate);
+      const nd   = nBuf.getChannelData(0);
+      for (let i = 0; i < nLen; i++) nd[i] = Math.random() * 2 - 1;
+      const src = AC.createBufferSource(); src.buffer = nBuf;
+      const hp  = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 7200;
+      const env = AC.createGain();
+      env.gain.setValueAtTime(amp, start);
+      env.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+      src.connect(hp); hp.connect(env); env.connect(master);
+      src.start(start);
+    }
+
+    // Chord voicings: Cmaj7 → Am7 → Dm7 → G7 (jazz ii-V-I in C)
+    const CHORDS = [
+      [261.6, 329.6, 392.0, 493.9],   // Cmaj7
+      [220.0, 261.6, 329.6, 392.0],   // Am7
+      [146.8, 174.6, 220.0, 261.6],   // Dm7
+      [196.0, 246.9, 293.7, 349.2],   // G7
+    ];
+    // Walking bass (four notes per bar — root, 3rd/5th, 5th, leading tone)
+    const BASS_WALK = [
+      [65.4, 82.4,  98.0, 123.5],   // C2 E2 G2 B2
+      [55.0, 65.4,  82.4,  98.0],   // A1 C2 E2 G2
+      [73.4, 87.3, 110.0, 130.8],   // D2 F2 A2 C3
+      [98.0, 123.5, 146.8, 130.8],  // G2 B2 D3 C3
+    ];
+
+    const BPM  = 72;
+    const BEAT = 60 / BPM;     // ≈ 0.833 s
+    const BAR  = BEAT * 4;     // ≈ 3.33 s
+
+    function scheduleBar(t, ci) {
+      const ch = CHORDS[ci];
+      const bw = BASS_WALK[ci];
+
+      // Chord pad — all tones, slightly staggered (jazz comp feel)
+      ch.forEach((f, i) => {
+        tone(f, t + i * 0.022, BAR * 0.84, 0.030, 'sine');
+      });
+
+      // Walking bass — triangle wave, warm and round
+      bw.forEach((f, i) => {
+        tone(f, t + i * BEAT, BEAT * 0.70, 0.092, 'triangle');
+      });
+
+      // Brushed backbeat on 2 and 4
+      hihat(t + BEAT * 1, 0.13, 0.042);
+      hihat(t + BEAT * 3, 0.13, 0.042);
+      // Ghost hats on off-beats (softer)
+      [0.5, 1.5, 2.5, 3.5].forEach(b => hihat(t + b * BEAT, 0.07, 0.018));
+    }
+
+    let nextBar = AC.currentTime + 0.4;
+    let barIdx  = 0;
+
+    function pump() {
+      if (!_jazzAC || _jazzAC.state === 'closed') return;
+      while (nextBar < AC.currentTime + 5.5) {
+        scheduleBar(nextBar, barIdx % CHORDS.length);
+        nextBar += BAR;
+        barIdx++;
+      }
+      setTimeout(pump, 1500);
+    }
+    pump();
+
+  } catch (e) { /* AudioContext unavailable */ }
+}
+
+// ── Background — bright white/cream with very subtle warmth ──────────────────
+function drawBG() {
+  // Crisp white-cream base
+  ctx.fillStyle = '#fefcf8';
+  ctx.fillRect(0, 0, W, H);
+
+  // Barely-there warm glow — just a hint of light from above
+  const pool = ctx.createRadialGradient(W * 0.5, H * 0.3, 0, W * 0.5, H * 0.35, W * 0.65);
+  pool.addColorStop(0,   'rgba(255,240,190,0.13)');
+  pool.addColorStop(0.6, 'rgba(240,200,120,0.04)');
+  pool.addColorStop(1,   'rgba(200,160,80,0.00)');
+  ctx.fillStyle = pool;
+  ctx.fillRect(0, 0, W, H);
+
+  // Very faint ruled lines
+  ctx.strokeStyle = 'rgba(180,150,80,0.06)';
+  ctx.lineWidth = 1;
+  for (let y = PLAY_TOP + 20; y < PLAY_BOT - 14; y += 30) {
+    ctx.beginPath(); ctx.moveTo(32, y); ctx.lineTo(W - 32, y); ctx.stroke();
+  }
+}
+
+// ── Bookshelf — white wall, pastel books, gold-engraved spines ───────────────
+function drawShelf() {
+  // ── White wall behind books ──
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, SHELF_Y);
+
+  // Subtle shadow from ceiling to give depth
+  const ceilShadow = ctx.createLinearGradient(0, 0, 0, 22);
+  ceilShadow.addColorStop(0, 'rgba(180,160,100,0.10)');
+  ceilShadow.addColorStop(1, 'rgba(180,160,100,0)');
+  ctx.fillStyle = ceilShadow;
+  ctx.fillRect(0, 0, W, 22);
+
+  // ── Books ──
+  BOOKS.forEach(b => {
+    const by = SHELF_Y - b.h;
+    ctx.save();
+    ctx.translate(b.x + b.w / 2, SHELF_Y);
+    ctx.rotate(b.tilt);
+    ctx.translate(-(b.x + b.w / 2), -SHELF_Y);
+
+    // Main spine body
+    ctx.fillStyle = b.col;
+    ctx.fillRect(b.x, by, b.w, b.h);
+
+    // Left highlight — light edge
+    ctx.fillStyle = 'rgba(255,255,255,0.40)';
+    ctx.fillRect(b.x, by, 1.5, b.h);
+
+    // Right shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.fillRect(b.x + b.w - 1.5, by, 1.5, b.h);
+
+    // Top edge — slightly lighter
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    ctx.fillRect(b.x, by, b.w, 2);
+
+    // ── Gold engraving bands ──
+    if (b.w >= 10) {
+      b.bands.forEach(frac => {
+        const gy = by + b.h * frac;
+        ctx.strokeStyle = 'rgba(184,148,40,0.72)';
+        ctx.lineWidth   = 0.9;
+        ctx.beginPath(); ctx.moveTo(b.x + 2, gy); ctx.lineTo(b.x + b.w - 2, gy); ctx.stroke();
+        // Double line for thicker books
+        if (b.w >= 16) {
+          ctx.strokeStyle = 'rgba(204,168,60,0.36)';
+          ctx.lineWidth   = 0.7;
+          ctx.beginPath(); ctx.moveTo(b.x + 2, gy + 2.5); ctx.lineTo(b.x + b.w - 2, gy + 2.5); ctx.stroke();
+        }
+      });
+      // Small gold central ornament on wide books
+      if (b.w >= 18 && b.h >= 60) {
+        const oy = by + b.h * 0.50;
+        ctx.font         = `${Math.round(b.w * 0.46)}px serif`;
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.globalAlpha  = 0.38;
+        ctx.fillStyle    = '#b89030';
+        ctx.fillText('✦', b.x + b.w / 2, oy);
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // Base shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.10)';
+    ctx.fillRect(b.x, SHELF_Y - 2, b.w, 2);
+
+    ctx.restore();
+  });
+
+  // ── Shelf face — warm light oak / blonde wood ──
+  const plank = ctx.createLinearGradient(0, SHELF_Y, 0, SHELF_Y + 12);
+  plank.addColorStop(0,   '#d8b870');
+  plank.addColorStop(0.4, '#c4a458');
+  plank.addColorStop(1,   '#a88840');
+  ctx.fillStyle = plank;
+  ctx.fillRect(0, SHELF_Y, W, 12);
+
+  // Wood grain on plank
+  ctx.strokeStyle = 'rgba(200,168,80,0.10)';
+  ctx.lineWidth = 0.8;
+  for (let x = 0; x < W; x += 20) {
+    ctx.beginPath();
+    ctx.moveTo(x, SHELF_Y);
+    ctx.bezierCurveTo(x + 4, SHELF_Y + 4, x + 8, SHELF_Y + 9, x + 12, SHELF_Y + 12);
+    ctx.stroke();
+  }
+
+  // Top highlight — bright gold trim
+  ctx.fillStyle = 'rgba(220,185,75,0.62)';
+  ctx.fillRect(0, SHELF_Y, W, 1.2);
+
+  // Subtle drop shadow below shelf
+  const spill = ctx.createLinearGradient(0, SHELF_Y + 12, 0, SHELF_Y + 24);
+  spill.addColorStop(0, 'rgba(140,100,20,0.12)');
+  spill.addColorStop(1, 'rgba(140,100,20,0)');
+  ctx.fillStyle = spill;
+  ctx.fillRect(0, SHELF_Y + 12, W, 12);
+}
+
+// ── Fairy lights ──────────────────────────────────────────────────────────────
+function drawFairyLights(t) {
+  ctx.strokeStyle = 'rgba(160,130,60,0.20)';
+  ctx.lineWidth   = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(0, LIGHTS_Y);
+  for (let x = 0; x <= W; x += 6) {
+    ctx.lineTo(x, LIGHTS_Y + Math.sin(x * 0.044) * 2.5);
+  }
+  ctx.stroke();
+
+  LIGHTS.forEach(l => {
+    const ly = LIGHTS_Y + Math.sin(l.x * 0.044) * 2.5;
+    const f  = 0.78 + 0.22 * Math.sin(t * 0.0011 + l.phase);
+
+    const g = ctx.createRadialGradient(l.x, ly, 0, l.x, ly, 18);
+    g.addColorStop(0,    `rgba(255,210,80,${0.40 * f})`);
+    g.addColorStop(0.4,  `rgba(255,170,30,${0.16 * f})`);
+    g.addColorStop(1,    'rgba(255,140,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(l.x, ly, 18, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = `rgba(255,230,90,${0.92 * f})`;
+    ctx.beginPath(); ctx.ellipse(l.x, ly + 2.5, 3.8, 5.2, 0, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = `rgba(255,255,220,${f})`;
+    ctx.beginPath(); ctx.arc(l.x, ly + 1.5, 2, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = 'rgba(100,70,10,0.40)';
+    ctx.fillRect(l.x - 1, ly - 6, 2, 6);
+  });
+}
+
+// ── HUD ───────────────────────────────────────────────────────────────────────
+function drawHUD() {
+  const hy = PLAY_BOT + 2;
+  const ch = H - hy;
+  const my = hy + ch * 0.44;
+
+  ctx.strokeStyle = 'rgba(184,148,40,0.18)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(28, hy); ctx.lineTo(W - 28, hy); ctx.stroke();
+
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.font      = `600 22px 'Playfair Display', serif`;
+  ctx.fillStyle = C.gold;
+  ctx.fillText(String(score).padStart(5, '0'), 28, my + 5);
+  ctx.font      = `italic 11px 'Playfair Display', serif`;
+  ctx.fillStyle = 'rgba(100,70,20,0.38)';
+  ctx.fillText('score', 28, my + 21);
+
+  if (poem) {
+    ctx.textAlign = 'center';
+    ctx.font      = `italic 13px 'Playfair Display', serif`;
+    ctx.fillStyle = 'rgba(80,50,10,0.50)';
+    ctx.fillText(`— ${poem.author}`, W / 2, my + 6);
+  }
+
+  ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+  ctx.font      = '22px serif';
+  ctx.fillStyle = C.rose;
+  ctx.fillText(Array.from({length:3}, (_, i) => i < lives ? '♥' : '♡').join(' '), W - 28, my + 6);
+  ctx.font      = `italic 11px 'Playfair Display', serif`;
+  ctx.fillStyle = 'rgba(100,70,20,0.38)';
+  ctx.fillText('lives', W - 28, my + 21);
+}
+
+// ── Shooter ───────────────────────────────────────────────────────────────────
+function drawShooter(x) {
+  ctx.save();
+  ctx.translate(x, SHOOTER_Y);
+
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 46);
+  g.addColorStop(0, 'rgba(200,160,40,0.15)');
+  g.addColorStop(1, 'rgba(200,160,40,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(0, 0, 46, 0, Math.PI * 2); ctx.fill();
+
+  ctx.fillStyle = '#f8f4ea';
+  ctx.beginPath();
+  ctx.moveTo(0,-20); ctx.lineTo(-28,-14); ctx.lineTo(-28,14); ctx.lineTo(0,13);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(184,148,40,0.40)'; ctx.lineWidth = 1.2; ctx.stroke();
+
+  ctx.fillStyle = '#fdf8f0';
+  ctx.beginPath();
+  ctx.moveTo(0,-20); ctx.lineTo(28,-14); ctx.lineTo(28,14); ctx.lineTo(0,13);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+
+  ctx.fillStyle = '#6a3812';
+  ctx.fillRect(-3.5,-20,7,33);
+  ctx.strokeStyle = 'rgba(200,158,38,0.60)'; ctx.lineWidth = 0.9;
+  ctx.beginPath(); ctx.moveTo(-3.5,-7); ctx.lineTo(3.5,-7); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-3.5, 3); ctx.lineTo(3.5, 3); ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(120,80,20,0.12)'; ctx.lineWidth = 0.9;
+  [-11,-6,-1,4,9].forEach(ly => {
+    ctx.beginPath(); ctx.moveTo(-26,ly); ctx.lineTo(-5,ly); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(5,ly);  ctx.lineTo(26,ly);  ctx.stroke();
+  });
+  ctx.restore();
+}
+
+// ── Word pill ─────────────────────────────────────────────────────────────────
+function drawWord(w) {
+  ctx.font = `italic 18px 'Playfair Display', serif`;
+  const tw = ctx.measureText(w.text).width;
+  w._tw = tw;
+  const pad = 13, bh = 36;
+  const bx  = w.x - tw / 2 - pad;
+  const by  = w.y - 26;
+
+  ctx.shadowColor   = 'rgba(120,90,20,0.14)';
+  ctx.shadowBlur    = 10;
+  ctx.shadowOffsetY = 3;
+
+  ctx.fillStyle = 'rgba(255,253,246,0.98)';
+  ctx.beginPath();
+  ctx.roundRect(bx, by, tw + pad * 2, bh, 10);
+  ctx.fill();
+
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.strokeStyle = 'rgba(184,148,40,0.42)';
+  ctx.lineWidth   = 1;
+  ctx.stroke();
+
+  ctx.fillStyle    = C.ink;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(w.text, w.x, w.y);
+}
+
+// ── Bullet ────────────────────────────────────────────────────────────────────
+function drawBullet(b) {
+  ctx.save();
+  const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, 13);
+  g.addColorStop(0,   'rgba(220,175,30,0.65)');
+  g.addColorStop(0.5, 'rgba(200,145,10,0.20)');
+  g.addColorStop(1,   'rgba(200,120,0,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(b.x, b.y, 13, 0, Math.PI * 2); ctx.fill();
+  ctx.font = '14px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = C.gold;
+  ctx.fillText('✦', b.x, b.y);
+  ctx.restore();
+}
+
+// ── Particles ─────────────────────────────────────────────────────────────────
+function drawParticle(p) {
+  ctx.save();
+  ctx.globalAlpha = p.alpha;
+  ctx.font = `${Math.round(p.size)}px serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(p.emoji, p.x, p.y);
+  ctx.restore();
+}
+
+// ── Button ────────────────────────────────────────────────────────────────────
+function drawButton(x, y, label, bw = 264, bh = 50) {
+  ctx.save();
+  ctx.shadowColor = 'rgba(60,100,60,0.30)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 6;
+  ctx.fillStyle   = '#2c5a2c';
+  ctx.beginPath(); ctx.roundRect(x - bw/2, y - bh/2, bw, bh, 11); ctx.fill();
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x - bw/2, y - bh/2, bw, bh/2); ctx.clip();
+  const hl = ctx.createLinearGradient(0, y - bh/2, 0, y);
+  hl.addColorStop(0, 'rgba(255,255,255,0.14)'); hl.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = hl;
+  ctx.beginPath(); ctx.roundRect(x - bw/2, y - bh/2, bw, bh, 11); ctx.fill();
+  ctx.restore();
+
+  ctx.font = `600 14px 'Playfair Display', serif`;
+  ctx.fillStyle = '#f0eace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(label, x, y);
+  ctx.restore();
+}
+
+// ── Divider ───────────────────────────────────────────────────────────────────
+function drawDivider(y) {
+  ctx.strokeStyle = 'rgba(184,148,40,0.22)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(W/2 - 138, y); ctx.lineTo(W/2 + 138, y); ctx.stroke();
+  ctx.font = '12px serif'; ctx.fillStyle = 'rgba(160,120,40,0.40)';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('✦  ✿  ✦', W / 2, y);
+}
+
+// ── Screens ───────────────────────────────────────────────────────────────────
+function drawTitle(t) {
+  drawBG(); drawShelf(); drawFairyLights(t);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+
+  ctx.font = `bold 54px 'Playfair Display', serif`;
+  ctx.fillStyle = C.ink;
+  ctx.fillText('VerseBlaster', W / 2, H / 2 - 96);
+
+  ctx.font = `italic 16px 'Playfair Display', serif`;
+  ctx.fillStyle = '#9a7030';
+  ctx.fillText('poems & quotes to shoot', W / 2, H / 2 - 60);
+
+  drawDivider(H / 2 - 42);
+
+  ctx.font = `14px 'Special Elite', cursive`;
+  ctx.fillStyle = '#5a3810';
+  [
+    'A poem is read aloud before each round begins.',
+    'Shoot the falling words before they drift away.',
+    'Move mouse to aim · Click or SPACE to shoot · 3 lives',
+  ].forEach((l, i) => ctx.fillText(l, W / 2, H / 2 - 2 + i * 27));
+
+  drawButton(W / 2, H / 2 + 106, '✦  Click to Begin  ✦');
+}
+
+function drawReading(t, dt) {
+  drawBG(); drawShelf(); drawFairyLights(t);
+  readAlpha = Math.min(1, readAlpha + dt * 0.0018);
+  blinkT   += dt;
+
+  ctx.save(); ctx.globalAlpha = readAlpha;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+
+  ctx.font = `italic 13px 'Playfair Display', serif`;
+  ctx.fillStyle = '#9a7030';
+  ctx.fillText('♪  listen closely  ♪', W / 2, H / 2 - 120);
+
+  ctx.font = `bold italic 26px 'Playfair Display', serif`;
+  ctx.fillStyle = C.ink;
+  ctx.fillText(`"${poem.title}"`, W / 2, H / 2 - 80);
+
+  ctx.font = `italic 15px 'Playfair Display', serif`;
+  ctx.fillStyle = '#9a7030';
+  ctx.fillText(`— ${poem.author}`, W / 2, H / 2 - 52);
+
+  drawDivider(H / 2 - 33);
+
+  ctx.font = `italic 15px 'Playfair Display', serif`;
+  ctx.fillStyle = '#5a3810';
+  const maxW = W - 168, pLines = [];
+  let line = '';
+  poem.text.split(' ').forEach(pw => {
+    const test = line ? line + ' ' + pw : pw;
+    if (ctx.measureText(test).width > maxW && line) { pLines.push(line); line = pw; }
+    else line = test;
+  });
+  if (line) pLines.push(line);
+  pLines.forEach((l, i) => ctx.fillText(l, W / 2, H / 2 + 12 + i * 28));
+
+  if (speechDone) {
+    ctx.globalAlpha = readAlpha * (0.55 + 0.45 * Math.sin(blinkT / 340));
+    ctx.font = `italic 14px 'Playfair Display', serif`;
+    ctx.fillStyle = '#2c5a2c';
+    ctx.fillText('✦  Get Ready…  ✦', W / 2, H - 98);
+  }
+  ctx.restore();
+}
+
+function drawClear(t) {
+  drawBG(); drawShelf(); drawFairyLights(t);
+  particles.forEach(drawParticle);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.font = '50px serif'; ctx.fillText('🌸 🌺 🌼', W / 2, H / 2 - 84);
+  ctx.font = `bold 32px 'Playfair Display', serif`;
+  ctx.fillStyle = C.ink; ctx.fillText('Round Complete!', W / 2, H / 2 - 28);
+  ctx.font = `italic 17px 'Playfair Display', serif`;
+  ctx.fillStyle = '#9a7030'; ctx.fillText(`Score: ${score}`, W / 2, H / 2 + 10);
+  drawButton(W / 2, H / 2 + 82, '✦  Next Poem  ✦');
+}
+
+function drawOver(t) {
+  drawBG(); drawShelf(); drawFairyLights(t);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.font = `bold 38px 'Playfair Display', serif`;
+  ctx.fillStyle = C.rose; ctx.fillText('The Words Escaped', W / 2, H / 2 - 62);
+  ctx.font = `italic 16px 'Playfair Display', serif`;
+  ctx.fillStyle = '#5a3010'; ctx.fillText('They wandered off into the pages…', W / 2, H / 2 - 26);
+  ctx.font = `600 22px 'Playfair Display', serif`;
+  ctx.fillStyle = C.ink; ctx.fillText(`Final Score: ${score}`, W / 2, H / 2 + 18);
+  drawButton(W / 2, H / 2 + 88, '✦  Play Again  ✦');
+}
+
+// ── Game logic ────────────────────────────────────────────────────────────────
+function startReading() {
+  STATE = 'READING'; speechDone = false; readAlpha = 0; blinkT = 0;
+  poem  = queue[qIdx % queue.length]; qIdx++;
+  // Strip punctuation from words for the falling game, but keep punctuation in TTS
+  toSpawn = poem.text.replace(/[.,!?;:'"—–\-]/g, '').split(' ').filter(w => w.length > 1);
+  spawnInterval = 2600; spawnTimer = 0;
+  canvas.style.cursor = 'default';
+
+  speak(
+    `${poem.title}, by ${poem.author}. ${poem.text}`,
+    () => { speechDone = true; setTimeout(startPlaying, 1500); }
+  );
+  setTimeout(() => {
+    if (STATE === 'READING') { speechDone = true; setTimeout(startPlaying, 700); }
+  }, 22000);
+}
+
+function startPlaying() {
+  if (STATE !== 'READING') return;
+  STATE = 'PLAYING';
+  words = []; bullets = []; particles = [];
+  pendingClear = false; clearTimer = 0;
+  shooterX = W / 2; targetX = W / 2;
+  canvas.style.cursor = 'crosshair';
+}
+
+function fire() {
+  bullets.push({ x: shooterX, y: SHOOTER_Y - 22, active: true });
+}
+
+function boom(x, y) {
+  for (let i = 0; i < 10; i++) {
+    const a = (Math.PI * 2 / 10) * i + (Math.random() - 0.5) * 0.55;
+    const s = 58 + Math.random() * 108;
+    particles.push({
+      x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60,
+      emoji: FLOWERS[Math.floor(Math.random() * FLOWERS.length)],
+      size: 15 + Math.random() * 14, life: 1, alpha: 1,
+    });
+  }
+}
+
+function updateParticles(dt) {
+  const s = dt / 1000;
+  particles.forEach(p => {
+    p.x += p.vx * s; p.y += p.vy * s;
+    p.vy += 148 * s;
+    p.life  -= s;
+    p.alpha  = Math.max(0, p.life);
+  });
+  particles = particles.filter(p => p.life > 0);
+}
+
+function update(dt) {
+  const s = dt / 1000;
+  shooterX += (targetX - shooterX) * 0.16;
+
+  if (toSpawn.length > 0) {
+    spawnTimer += dt;
+    if (spawnTimer >= spawnInterval) {
+      spawnTimer = 0;
+      const text = toSpawn.shift();
+      ctx.font = `italic 18px 'Playfair Display', serif`;
+      const tw = ctx.measureText(text).width;
+      words.push({
+        text,
+        x: 72 + Math.random() * (W - 144),
+        y: PLAY_TOP + 10,
+        speed: 32 + Math.random() * 32,   // ~15% faster than previous 28–56
+        _tw: tw, _pad: 13,
+      });
+      spawnInterval = Math.max(1200, spawnInterval - 22);
+    }
+  }
+
+  bullets.forEach(b => { b.y -= 460 * s; if (b.y < PLAY_TOP) b.active = false; });
+
+  const hitIdx = new Set();
+  words.forEach((w, wi) => {
+    w.y += w.speed * s;
+    for (const b of bullets) {
+      if (!b.active || hitIdx.has(wi)) continue;
+      const hw = (w._tw || 60) / 2 + w._pad;
+      if (Math.abs(b.x - w.x) < hw && b.y < w.y && b.y > w.y - 38) {
+        b.active = false; hitIdx.add(wi);
+        boom(w.x, w.y - 10);
+        score += 10 + w.text.length;
+        break;
+      }
+    }
+    if (w.y > PLAY_BOT && !hitIdx.has(wi)) {
+      hitIdx.add(wi); lives--;
+      if (lives <= 0) { STATE = 'OVER'; canvas.style.cursor = 'pointer'; }
+    }
+  });
+
+  words   = words.filter((_, i) => !hitIdx.has(i));
+  bullets = bullets.filter(b => b.active);
+
+  if (!pendingClear && toSpawn.length === 0 && words.length === 0 && STATE === 'PLAYING') {
+    pendingClear = true; clearTimer = 0;
+  }
+  if (pendingClear) {
+    clearTimer += dt;
+    if (clearTimer > 1700 && STATE === 'PLAYING') {
+      STATE = 'CLEAR'; canvas.style.cursor = 'pointer';
+    }
+  }
+}
+
+// ── Main loop ─────────────────────────────────────────────────────────────────
+function loop(ts) {
+  const dt = Math.min(ts - lastTS, 50);
+  lastTS    = ts; gameTime += dt;
+  ctx.clearRect(0, 0, W, H);
+
+  if (STATE === 'PLAYING' || STATE === 'CLEAR') updateParticles(dt);
+
+  switch (STATE) {
+    case 'TITLE':   drawTitle(gameTime); break;
+    case 'READING': drawReading(gameTime, dt); break;
+    case 'PLAYING':
+      update(dt);
+      drawBG(); drawShelf(); drawFairyLights(gameTime);
+      words.forEach(drawWord); bullets.forEach(drawBullet);
+      particles.forEach(drawParticle);
+      drawShooter(shooterX); drawHUD();
+      break;
+    case 'CLEAR': drawClear(gameTime); break;
+    case 'OVER':  drawOver(gameTime);  break;
+  }
+  requestAnimationFrame(loop);
+}
+
+// ── Events ────────────────────────────────────────────────────────────────────
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  targetX = (e.clientX - r.left) * (W / r.width);
+  if (STATE === 'PLAYING') canvas.style.cursor = 'crosshair';
+});
+
+canvas.addEventListener('click', () => {
+  startAmbientJazz();
+  switch (STATE) {
+    case 'TITLE':   startReading(); break;
+    case 'PLAYING': fire(); break;
+    case 'CLEAR':   startReading(); break;
+    case 'OVER':
+      score = 0; lives = 3; qIdx = 0;
+      queue = [...CONTENT].sort(() => Math.random() - 0.5);
+      startReading();
+      break;
+  }
+});
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0], r = canvas.getBoundingClientRect();
+  targetX = (t.clientX - r.left) * (W / r.width);
+  shooterX = targetX;
+  canvas.dispatchEvent(new MouseEvent('click'));
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0], r = canvas.getBoundingClientRect();
+  targetX = (t.clientX - r.left) * (W / r.width);
+}, { passive: false });
+
+window.addEventListener('keydown', e => {
+  startAmbientJazz();
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (STATE === 'PLAYING') fire();
+    else if (STATE === 'TITLE') startReading();
+  }
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.fonts.ready.then(() => {
+  requestAnimationFrame(ts => { lastTS = ts; requestAnimationFrame(loop); });
+});
+
+</script>
+</body>
+</html>
